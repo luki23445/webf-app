@@ -1,0 +1,479 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// AUTH & RBAC
+// ============================================
+
+model User {
+  id             String    @id @default(uuid())
+  email          String    @unique
+  name           String
+  passwordHash   String
+  passwordSalt   String
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  memberships Membership[]
+  timeEntries TimeEntry[]
+  comments    Comment[]
+  auditLogs   AuditLog[]
+
+  @@index([email])
+}
+
+model Organization {
+  id        String   @id @default(uuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships      Membership[]
+  clients          Client[]
+  projects         Project[]
+  integrationConfigs IntegrationConfig[]
+  outboxEvents     OutboxEvent[]
+  auditLogs        AuditLog[]
+  calendarLinks    CalendarLink[]
+  calendarEventMirrors CalendarEventMirror[]
+}
+
+model Role {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  rolePermissions RolePermission[]
+  memberships     Membership[]
+}
+
+model Permission {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  createdAt DateTime @default(now())
+
+  rolePermissions RolePermission[]
+}
+
+model RolePermission {
+  id           String @id @default(uuid())
+  roleId       String
+  permissionId String
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@index([roleId])
+}
+
+model Membership {
+  id             String   @id @default(uuid())
+  userId         String
+  organizationId String
+  roleId         String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  role         Role         @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+  @@index([organizationId])
+  @@index([userId])
+}
+
+// ============================================
+// CLIENTS
+// ============================================
+
+model Client {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String
+  email          String?
+  phone          String?
+  notes          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  projects      Project[]
+
+  @@index([organizationId])
+}
+
+// ============================================
+// PROJECTS
+// ============================================
+
+model Project {
+  id              String   @id @default(uuid())
+  organizationId  String
+  clientId        String
+  name            String
+  type            String   // website, shop, custom, other
+  status          String   @default("new") // new, in_progress, blocked, review, done, archived
+  description     String?
+  urls            String[] // array of URLs
+  startDate       DateTime?
+  dueDate         DateTime?
+  assignedManagerId String?
+  createdById     String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  organization         Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client               Client               @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  tasks                Task[]
+  timeEntries          TimeEntry[]
+  comments             Comment[]
+  domainResources      DomainResource[]
+  hostingResources     HostingResource[]
+  dnsRecordPlans       DnsRecordPlan[]
+  projectLinks         ProjectLink[]
+  pagespeedTargets     PageSpeedTarget[]
+  projectCalendarTags  ProjectCalendarTag[]
+  calendarEventMirrors CalendarEventMirror[]
+
+  @@index([organizationId])
+  @@index([clientId])
+  @@index([status])
+  @@index([assignedManagerId])
+}
+
+// ============================================
+// TASKS
+// ============================================
+
+model Task {
+  id              String   @id @default(uuid())
+  projectId       String
+  title           String
+  description     String?
+  status          String   @default("todo") // todo, in_progress, blocked, review, done
+  priority        String?  // low, medium, high, urgent
+  order           Int      @default(0)
+  assignedToId    String?
+  estimateMinutes Int?
+  dueDate         DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  project            Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  dependencies       TaskDependency[]   @relation("DependentTask")
+  dependents         TaskDependency[]   @relation("DependsOnTask")
+  checklistItems     TaskChecklistItem[]
+  timeEntries        TimeEntry[]
+  comments           Comment[]
+
+  @@index([projectId])
+  @@index([status])
+  @@index([assignedToId])
+}
+
+model TaskDependency {
+  id                String @id @default(uuid())
+  taskId            String
+  dependsOnTaskId   String
+
+  task          Task @relation("DependentTask", fields: [taskId], references: [id], onDelete: Cascade)
+  dependsOnTask Task @relation("DependsOnTask", fields: [dependsOnTaskId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, dependsOnTaskId])
+  @@index([taskId])
+  @@index([dependsOnTaskId])
+}
+
+model TaskChecklistItem {
+  id        String   @id @default(uuid())
+  taskId    String
+  text      String
+  done      Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+}
+
+// ============================================
+// TIME TRACKING
+// ============================================
+
+model TimeEntry {
+  id        String   @id @default(uuid())
+  projectId String
+  taskId    String?
+  userId    String
+  startedAt DateTime
+  endedAt   DateTime?
+  minutes   Int
+  note      String?
+  source    String   @default("manual") // manual, timer
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  task    Task?   @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([taskId])
+  @@index([userId])
+  @@index([startedAt])
+}
+
+// ============================================
+// COMMENTS
+// ============================================
+
+model Comment {
+  id         String   @id @default(uuid())
+  entityType String   // project, task, etc.
+  entityId   String
+  userId     String
+  content    String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([entityType, entityId])
+  @@index([userId])
+}
+
+// ============================================
+// RESOURCES
+// ============================================
+
+model DomainResource {
+  id          String    @id @default(uuid())
+  projectId   String
+  domain      String
+  registrar   String?
+  expiryDate  DateTime?
+  nameservers String[]
+  notes       String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([expiryDate])
+}
+
+model HostingResource {
+  id        String   @id @default(uuid())
+  projectId String
+  provider  String
+  plan      String?
+  ip        String?
+  panelUrl  String?
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+}
+
+model DnsRecordPlan {
+  id        String   @id @default(uuid())
+  projectId String
+  type      String   // A, AAAA, CNAME, MX, TXT, NS
+  name      String
+  value     String
+  ttl       Int?
+  status    String   @default("pending") // pending, done
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([status])
+}
+
+model ProjectLink {
+  id        String   @id @default(uuid())
+  projectId String
+  category  String   // repo, figma, gsc, ga, docs, other
+  url       String
+  label     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([category])
+}
+
+// ============================================
+// INTEGRATIONS
+// ============================================
+
+model IntegrationConfig {
+  id             String   @id @default(uuid())
+  organizationId String
+  type           String   // pagespeed, google_calendar, n8n
+  configJson     Json     // encrypted fields stored here
+  encryptedFields String[] // list of field keys that are encrypted
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, type])
+  @@index([organizationId])
+}
+
+model OutboxEvent {
+  id             String    @id @default(uuid())
+  organizationId String
+  eventType      String
+  payloadJson    Json
+  status         String    @default("pending") // pending, sent, failed
+  retries        Int       @default(0)
+  nextRetryAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, status])
+  @@index([nextRetryAt])
+}
+
+// ============================================
+// PAGESPEED
+// ============================================
+
+model PageSpeedTarget {
+  id        String   @id @default(uuid())
+  projectId String
+  url       String
+  label     String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project    Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  snapshots  PageSpeedSnapshot[]
+
+  @@index([projectId])
+  @@index([active])
+}
+
+model PageSpeedSnapshot {
+  id              String   @id @default(uuid())
+  targetId        String
+  fetchedAt       DateTime @default(now())
+  strategy        String   // mobile, desktop
+  scorePerformance Int?
+  lcp             Float?
+  cls             Float?
+  inp             Float?
+  ttfb            Float?
+  rawJson         Json?
+  createdAt       DateTime @default(now())
+
+  target PageSpeedTarget @relation(fields: [targetId], references: [id], onDelete: Cascade)
+
+  @@index([targetId])
+  @@index([fetchedAt])
+}
+
+// ============================================
+// GOOGLE CALENDAR
+// ============================================
+
+model CalendarLink {
+  id                String   @id @default(uuid())
+  organizationId    String
+  googleCalendarId  String
+  projectId         String?
+  enabled           Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([projectId])
+}
+
+model ProjectCalendarTag {
+  id        String   @id @default(uuid())
+  projectId String
+  tag       String
+  createdAt DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, tag])
+  @@index([projectId])
+  @@index([tag])
+}
+
+model CalendarEventMirror {
+  id             String    @id @default(uuid())
+  organizationId String
+  projectId      String?
+  googleEventId  String
+  title          String
+  startAt        DateTime
+  endAt          DateTime?
+  type           String?   // meeting, domain_expiry, ssl_expiry, deployment, milestone
+  lastSyncedAt   DateTime  @default(now())
+  rawJson        Json?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project      Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, googleEventId])
+  @@index([organizationId])
+  @@index([projectId])
+  @@index([startAt])
+}
+
+// ============================================
+// AUDIT LOG
+// ============================================
+
+model AuditLog {
+  id             String    @id @default(uuid())
+  organizationId String
+  userId         String
+  action         String
+  entityType     String
+  entityId       String
+  metadataJson   Json?
+  createdAt      DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
