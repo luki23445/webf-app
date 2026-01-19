@@ -31,7 +31,8 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
     return (
       <MainLayout>
         <div className="text-center py-12">
-          <p className="text-gray-500">Ładowanie...</p>
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="text-gray-500 mt-4">Ładowanie projektu...</p>
         </div>
       </MainLayout>
     );

@@ -19,7 +19,22 @@ async function buildApp() {
   // Security
   await app.register(helmet);
   await app.register(cors, {
-    origin: WEB_URL,
+    origin: (origin, cb) => {
+      // Allow requests from localhost (dev) and configured WEB_URL
+      const allowedOrigins = [
+        WEB_URL,
+        'http://localhost:3000',
+        'http://127.0.0.1:3000',
+        'http://localhost:3001',
+        'http://127.0.0.1:3001',
+      ];
+      
+      if (!origin || allowedOrigins.includes(origin)) {
+        cb(null, true);
+      } else {
+        cb(new Error('Not allowed by CORS'), false);
+      }
+    },
     credentials: true,
   });
   await app.register(rateLimit, {

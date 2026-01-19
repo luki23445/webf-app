@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '../../contexts/auth-context';
 import { authApi } from '../../lib/api';
+import { handleApiError } from './error-handler';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -23,9 +24,13 @@ export default function LoginPage() {
       if (response.data?.token && response.data?.user) {
         login(response.data.token, response.data.user);
         router.push('/dashboard');
+        router.refresh();
+      } else {
+        setError('Nieprawidłowa odpowiedź z serwera');
       }
     } catch (err: any) {
-      setError(err.message || 'Błąd logowania');
+      console.error('Login error:', err);
+      setError(handleApiError(err));
     } finally {
       setLoading(false);
     }

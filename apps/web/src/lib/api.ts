@@ -15,22 +15,38 @@ async function request<T>(
 ): Promise<ApiResponse<T>> {
   const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
 
-  const response = await fetch(`${API_URL}${endpoint}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token && { Authorization: `Bearer ${token}` }),
-      ...options?.headers,
-    },
-  });
+  try {
+    const response = await fetch(`${API_URL}${endpoint}`, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token && { Authorization: `Bearer ${token}` }),
+        ...options?.headers,
+      },
+    });
 
-  const data = await response.json();
+    // Sprawdź czy odpowiedź to JSON
+    const contentType = response.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+      const text = await response.text();
+      throw new Error(`API returned non-JSON: ${text.substring(0, 100)}`);
+    }
 
-  if (!response.ok) {
-    throw new Error(data.error?.message || 'Request failed');
+    const data = await response.json();
+
+    if (!response.ok) {
+      const errorMessage = data.error?.message || data.message || `HTTP ${response.status}: ${response.statusText}`;
+      throw new Error(errorMessage);
+    }
+
+    return data;
+  } catch (error: any) {
+    // Jeśli to błąd sieci
+    if (error.name === 'TypeError' && error.message.includes('fetch')) {
+      throw new Error('Nie można połączyć się z serwerem. Sprawdź czy API działa na porcie 3001.');
+    }
+    throw error;
   }
-
-  return data;
 }
 
 // Auth

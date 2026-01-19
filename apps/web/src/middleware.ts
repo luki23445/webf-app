@@ -1,19 +1,15 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
+// Middleware - tylko podstawowe przekierowania
+// Autoryzacja jest sprawdzana w AuthGuard (client-side)
 export function middleware(request: NextRequest) {
-  const token = request.cookies.get('token')?.value;
   const isLoginPage = request.nextUrl.pathname === '/login';
-  const isPublicPage = request.nextUrl.pathname === '/' || isLoginPage;
+  const isRoot = request.nextUrl.pathname === '/';
 
-  // Jeśli nie ma tokenu i próbuje wejść na chronioną stronę
-  if (!token && !isPublicPage) {
+  // Przekieruj root na login (AuthGuard zadecyduje czy przekierować dalej)
+  if (isRoot) {
     return NextResponse.redirect(new URL('/login', request.url));
-  }
-
-  // Jeśli ma token i jest na stronie logowania, przekieruj do dashboard
-  if (token && isLoginPage) {
-    return NextResponse.redirect(new URL('/dashboard', request.url));
   }
 
   return NextResponse.next();
